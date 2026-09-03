@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Latent Space Music Mimic — Audio-to-Audio style transfer system. Analyze, separate, and re-compose music with entirely new notes using generative AI synthesis.">
+  <title>MIMIC — Latent Space Music Transfer</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='80'>🎵</text></svg>">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ═══ HEADER ═══════════════════════════════════════ -->
+    <header class="header" id="header">
+      <div class="header__brand">
+        <div class="header__logo">MIMIC<span>Latent Space</span></div>
+      </div>
+      <div class="header__actions">
+        <button class="btn btn--primary" id="btn-export" disabled>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v10M6 9l4 4 4-4M3 15v2h14v-2"/></svg>
+          Export WAV
+        </button>
+      </div>
+    </header>
+
+    <!-- ═══ MAIN PANELS ══════════════════════════════════ -->
+    <main class="panels">
+
+      <!-- ── LEFT: Source Input & Extraction ─────────── -->
+      <section class="card" id="panel-source">
+        <h2 class="card__title">
+          <span class="dot"></span>
+          Source Input & Extraction
+        </h2>
+
+        <!-- Preset selector -->
+        <div class="presets-row" id="presets-row">
+          <button class="preset-chip active" data-preset="jazz">🎷 Jazz Solo</button>
+          <button class="preset-chip" data-preset="synthwave">🌃 Synthwave</button>
+          <button class="preset-chip" data-preset="classical">🎻 Classical</button>
+          <button class="preset-chip" data-preset="ambient">🌊 Ambient</button>
+        </div>
+
+        <!-- Upload zone -->
+        <div class="upload-zone" id="upload-zone">
+          <div class="upload-zone__icon">📂</div>
+          <div class="upload-zone__text">Drop audio file or click to upload</div>
+          <div class="upload-zone__hint">MP3, WAV, OGG — up to 30s recommended</div>
+          <input type="file" id="file-input" accept="audio/*" hidden>
+        </div>
+
+        <!-- Source waveform -->
+        <div class="canvas-frame" id="source-waveform-frame">
+          <span class="canvas-label">Source Waveform</span>
+          <canvas id="canvas-source"></canvas>
+        </div>
+
+        <!-- Analyze button -->
+        <button class="btn btn--primary btn--lg" id="btn-analyze" style="width:100%">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg>
+          Analyze &amp; Separate
+        </button>
+
+        <!-- Analysis steps -->
+        <div class="analysis-steps">
+          <div class="analysis-step" id="step-1">
+            <div class="analysis-step__icon">1</div>
+            <span class="analysis-step__text">Load &amp; Resample Audio</span>
+          </div>
+          <div class="analysis-step" id="step-2">
+            <div class="analysis-step__icon">2</div>
+            <span class="analysis-step__text">FFT Spectral Decomposition</span>
+          </div>
+          <div class="analysis-step" id="step-3">
+            <div class="analysis-step__icon">3</div>
+            <span class="analysis-step__text">Instrument Stem Separation (NMF)</span>
+          </div>
+          <div class="analysis-step" id="step-4">
+            <div class="analysis-step__icon">4</div>
+            <span class="analysis-step__text">Latent Style Embedding</span>
+          </div>
+          <div class="analysis-step" id="step-5">
+            <div class="analysis-step__icon">5</div>
+            <span class="analysis-step__text">Build Re-Composition Model</span>
+          </div>
+        </div>
+
+        <!-- Stems display -->
+        <div class="stems-grid" id="stems-grid">
+          <div class="stem-row">
+            <div class="stem-indicator stem-indicator--lead"></div>
+            <span class="stem-name">Lead</span>
+            <div class="stem-canvas-wrap"><canvas id="canvas-stem-lead"></canvas></div>
+          </div>
+          <div class="stem-row">
+            <div class="stem-indicator stem-indicator--chords"></div>
+            <span class="stem-name">Chords</span>
+            <div class="stem-canvas-wrap"><canvas id="canvas-stem-pad"></canvas></div>
+          </div>
+          <div class="stem-row">
+            <div class="stem-indicator stem-indicator--bass"></div>
+            <span class="stem-name">Bass</span>
+            <div class="stem-canvas-wrap"><canvas id="canvas-stem-bass"></canvas></div>
+          </div>
+          <div class="stem-row">
+            <div class="stem-indicator stem-indicator--drums"></div>
+            <span class="stem-name">Drums</span>
+            <div class="stem-canvas-wrap"><canvas id="canvas-stem-drums"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── CENTER: Latent Space Explorer ───────────── -->
+      <section class="card" id="panel-latent">
+        <h2 class="card__title">
+          <span class="dot dot--violet"></span>
+          Latent Space Explorer
+        </h2>
+
+        <!-- 2D Latent Grid -->
+        <div class="canvas-frame canvas-frame--square latent-grid-container" id="latent-grid-frame">
+          <span class="canvas-label">Style Embedding Space</span>
+          <span class="axis-label axis-label--x">Energy →</span>
+          <span class="axis-label axis-label--y">↓ Warmth</span>
+          <canvas id="canvas-latent"></canvas>
+        </div>
+
+        <!-- Timbre Controls -->
+        <div class="sliders-section">
+          <div class="sliders-section__heading">Timbre</div>
+          <div class="control-group">
+            <label class="control-label">Brightness <span class="control-value" id="val-brightness">50%</span></label>
+            <input type="range" id="slider-brightness" min="0" max="1" step="0.01" value="0.5">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Resonance <span class="control-value" id="val-resonance">30%</span></label>
+            <input type="range" id="slider-resonance" min="0" max="1" step="0.01" value="0.3" class="slider--violet">
+          </div>
+        </div>
+
+        <!-- Rhythm Controls -->
+        <div class="sliders-section">
+          <div class="sliders-section__heading">Rhythm</div>
+          <div class="control-group">
+            <label class="control-label">Tempo <span class="control-value" id="val-bpm">110</span></label>
+            <input type="range" id="slider-bpm" min="60" max="180" step="1" value="110">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Swing <span class="control-value" id="val-swing">0%</span></label>
+            <input type="range" id="slider-swing" min="0" max="1" step="0.01" value="0" class="slider--magenta">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Density <span class="control-value" id="val-density">60%</span></label>
+            <input type="range" id="slider-density" min="0.1" max="1" step="0.01" value="0.6">
+          </div>
+          <div class="control-group">
+            <div class="select-wrap">
+              <select id="select-drum-pattern">
+                <option value="swing">Swing</option>
+                <option value="straight">Straight</option>
+                <option value="driving">Driving</option>
+                <option value="sparse">Sparse</option>
+                <option value="syncopated">Syncopated</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Melody Controls -->
+        <div class="sliders-section">
+          <div class="sliders-section__heading">Melody</div>
+          <div class="control-group">
+            <label class="control-label">Phrase Length <span class="control-value" id="val-phrase">8 beats</span></label>
+            <input type="range" id="slider-phrase" min="2" max="16" step="1" value="8" class="slider--lime">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Leap Probability <span class="control-value" id="val-leap">20%</span></label>
+            <input type="range" id="slider-leap" min="0" max="0.6" step="0.01" value="0.2" class="slider--violet">
+          </div>
+          <div class="control-group">
+            <div class="select-wrap">
+              <select id="select-scale">
+                <option value="dorian">Dorian</option>
+                <option value="minor">Natural Minor</option>
+                <option value="major">Major</option>
+                <option value="mixolydian">Mixolydian</option>
+                <option value="lydian">Lydian</option>
+                <option value="minorPentatonic">Minor Pentatonic</option>
+                <option value="majorPentatonic">Major Pentatonic</option>
+                <option value="blues">Blues</option>
+                <option value="phrygian">Phrygian</option>
+                <option value="harmonicMinor">Harmonic Minor</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Effects Controls -->
+        <div class="sliders-section">
+          <div class="sliders-section__heading">Effects</div>
+          <div class="control-group">
+            <label class="control-label">Reverb <span class="control-value" id="val-reverb">30%</span></label>
+            <input type="range" id="slider-reverb" min="0" max="1" step="0.01" value="0.3">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Delay <span class="control-value" id="val-delay">20%</span></label>
+            <input type="range" id="slider-delay" min="0" max="1" step="0.01" value="0.2" class="slider--magenta">
+          </div>
+        </div>
+      </section>
+
+      <!-- ── RIGHT: Re-Composition Output ────────────── -->
+      <section class="card" id="panel-output">
+        <h2 class="card__title">
+          <span class="dot dot--magenta"></span>
+          Re-Composition Output
+        </h2>
+
+        <!-- Transport -->
+        <div class="transport" id="transport">
+          <button class="transport__play" id="btn-play" disabled>
+            <svg id="play-icon" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <polygon points="6,4 16,10 6,16"/>
+            </svg>
+          </button>
+          <div class="transport__info">
+            <div class="transport__time" id="transport-time">00:00.00</div>
+            <div class="transport__status" id="transport-status">IDLE</div>
+          </div>
+          <div class="transport__bpm" id="transport-bpm">110<span>BPM</span></div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-bar">
+          <div class="progress-bar__fill" id="progress-fill"></div>
+        </div>
+
+        <!-- Spectrum Visualizer -->
+        <div class="canvas-frame" id="spectrum-frame">
+          <span class="canvas-label">Master Spectrum</span>
+          <canvas id="canvas-spectrum"></canvas>
+        </div>
+
+        <!-- Piano Roll -->
+        <div class="canvas-frame canvas-frame--tall" id="piano-roll-frame">
+          <span class="canvas-label">Scrolling Piano Roll</span>
+          <canvas id="canvas-piano-roll"></canvas>
+        </div>
+
+        <!-- Duration selector for export -->
+        <div class="flex-between mt-md">
+          <span class="text-mono text-xs text-muted">COMPOSITION LENGTH</span>
+          <div class="duration-selector">
+            <button class="duration-chip active" data-duration="30">30s</button>
+            <button class="duration-chip" data-duration="60">1m</button>
+            <button class="duration-chip" data-duration="120">2m</button>
+            <button class="duration-chip" data-duration="180">3m</button>
+            <button class="duration-chip" data-duration="300">5m</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ═══ BOTTOM BAR ═══════════════════════════════════ -->
+    <footer class="bottom-bar" id="bottom-bar">
+      <div class="status-dots">
+        <div class="status-dot" id="dot-1"></div>
+        <div class="status-dot" id="dot-2"></div>
+        <div class="status-dot" id="dot-3"></div>
+      </div>
+      <div class="log-line" id="log-msg">
+        <span class="timestamp">[--:--:--]</span>
+        <span class="msg">Awaiting initialization...</span>
+      </div>
+    </footer>
+
+    <!-- ═══ EXPORT MODAL ═════════════════════════════════ -->
+    <div class="modal-overlay" id="modal-export">
+      <div class="modal">
+        <div class="modal__title">Export Composition</div>
+        <div class="modal__body">
+          <p style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.6;">
+            Render the current style parameters into a downloadable WAV file.
+            The offline renderer will compile the entire composition in seconds.
+          </p>
+          <div class="control-group">
+            <label class="control-label">Duration (seconds)</label>
+            <div class="select-wrap">
+              <select id="modal-duration">
+                <option value="10">10 seconds (quick test)</option>
+                <option value="30" selected>30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="120">2 minutes</option>
+                <option value="180">3 minutes</option>
+                <option value="300">5 minutes (full composition)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal__footer">
+          <button class="btn" id="btn-export-cancel">Cancel</button>
+          <button class="btn btn--accent" id="btn-export-confirm">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v10M6 9l4 4 4-4M3 15v2h14v-2"/></svg>
+            Render &amp; Download
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
