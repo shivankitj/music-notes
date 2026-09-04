@@ -125,6 +125,7 @@ class App {
     this.currentPreset = 'jazz';
     this.exportDuration = 30;
     this.sessionId = null;
+    this.sourceAudioBuffer = null;
 
     // API base URL (same origin since Express serves frontend)
     this.API_BASE = '/api';
@@ -198,6 +199,8 @@ class App {
       canvasStemPad: q('#canvas-stem-pad'),
       canvasStemBass: q('#canvas-stem-bass'),
       canvasStemDrums: q('#canvas-stem-drums'),
+      stemExportButtons: qa('.stem-export-btn'),
+      stemExportStatus: q('#stem-export-status'),
 
       // Sliders
       sliderBrightness: q('#slider-brightness'),
@@ -257,6 +260,10 @@ class App {
 
     // Analyze button
     this.dom.btnAnalyze.addEventListener('click', () => this._runAnalysis());
+
+    this.dom.stemExportButtons.forEach(button => {
+      button.addEventListener('click', () => this._exportStem(button.dataset.stemExport, button));
+    });
 
     // Play/Stop
     this.dom.btnPlay.addEventListener('click', () => this._togglePlayback());
@@ -727,6 +734,7 @@ class App {
       await this.engine.init();
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await this.engine.ctx.decodeAudioData(arrayBuffer);
+      this.sourceAudioBuffer = audioBuffer;
       this._log(`Decoded: ${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.sampleRate}Hz`);
 
       // Set waveform from actual data
@@ -738,12 +746,129 @@ class App {
       this.isAnalyzed = false;
       this.dom.analysisSteps.forEach(s => s.classList.remove('active', 'done'));
       this.dom.btnAnalyze.disabled = false;
+      this._setStemExportAvailability(true);
     } catch (err) {
       this._log(`⚠ Failed to decode audio: ${err.message}`);
     }
   }
 
   // ── Export ─────────────────────────────────────────────
+
+  _setStemExportAvailability(enabled) {
+    this.dom.stemExportButtons.forEach(button => {
+      button.disabled = !enabled;
+    });
+    if (this.dom.stemExportStatus) {
+      this.dom.stemExportStatus.textContent = enabled ? 'READY TO RENDER' : 'UPLOAD A TRACK FIRST';
+    }
+  }
+
+  async _exportStem(type, button) {
+    if (!this.sourceAudioBuffer || button.disabled) return;
+
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Rendering...';
+    this.dom.stemExportStatus.textContent = 'RENDERING AUDIO';
+
+    try {
+      let apiResponse = null;
+      try {
+        apiResponse = await fetch(`${this.API_BASE}/separate/${this.sessionId}?stem=${encodeURIComponent(type)}`, { method: 'POST' });
+      } catch (error) {
+        this._log('Hosted separator unavailable; using local audio filters.');
+      }
+      const blob = apiResponse && apiResponse.ok
+        ? await apiResponse.blob()
+        : this._audioBufferToWav(await this._renderStem(type));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `mimic-${type}-${this._safeFileName(this.sourceAudioBuffer.duration)}.wav`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      this._log(`✓ Downloaded ${this._stemLabel(type)} track (${(blob.size / 1024 / 1024).toFixed(2)} MB)${apiResponse.ok ? ' via hosted separator' : ''}`);
+      this.dom.stemExportStatus.textContent = 'READY TO RENDER';
+    } catch (error) {
+      this._log(`⚠ Stem export failed: ${error.message}`);
+      this.dom.stemExportStatus.textContent = 'EXPORT FAILED';
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
+  async _renderStem(type) {
+    const source = this.sourceAudioBuffer;
+    const offline = new OfflineAudioContext(source.numberOfChannels, source.length, source.sampleRate);
+    const sourceNode = offline.createBufferSource();
+    sourceNode.buffer = source;
+
+    if (type === 'vocals-removed') {
+      // Center-channel cancellation removes material shared equally by L and R.
+      const output = offline.createBuffer(2, source.length, source.sampleRate);
+      const left = source.getChannelData(0);
+      const right = source.numberOfChannels > 1 ? source.getChannelData(1) : left;
+      const outLeft = output.getChannelData(0);
+      const outRight = output.getChannelData(1);
+      for (let i = 0; i < source.length; i++) {
+        const difference = (left[i] - right[i]) * 0.5;
+        outLeft[i] = difference;
+        outRight[i] = difference;
+      }
+      return output;
+    }
+
+    const filter = offline.createBiquadFilter();
+    filter.type = type === 'bass' ? 'lowpass' : type === 'percussion' ? 'highpass' : 'bandpass';
+    filter.frequency.value = type === 'bass' ? 220 : type === 'percussion' ? 2500 : 1100;
+    filter.Q.value = type === 'instruments' ? 0.65 : 0.8;
+    sourceNode.connect(filter);
+    filter.connect(offline.destination);
+    sourceNode.start();
+    return offline.startRendering();
+  }
+
+  _audioBufferToWav(buffer) {
+    const channels = buffer.numberOfChannels;
+    const frameCount = buffer.length;
+    const bytesPerSample = 2;
+    const wav = new ArrayBuffer(44 + frameCount * channels * bytesPerSample);
+    const view = new DataView(wav);
+    const writeText = (offset, text) => [...text].forEach((char, i) => view.setUint8(offset + i, char.charCodeAt(0)));
+    writeText(0, 'RIFF');
+    view.setUint32(4, 36 + frameCount * channels * bytesPerSample, true);
+    writeText(8, 'WAVE');
+    writeText(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, buffer.sampleRate, true);
+    view.setUint32(28, buffer.sampleRate * channels * bytesPerSample, true);
+    view.setUint16(32, channels * bytesPerSample, true);
+    view.setUint16(34, 16, true);
+    writeText(36, 'data');
+    view.setUint32(40, frameCount * channels * bytesPerSample, true);
+    let offset = 44;
+    for (let i = 0; i < frameCount; i++) {
+      for (let channel = 0; channel < channels; channel++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return new Blob([wav], { type: 'audio/wav' });
+  }
+
+  _stemLabel(type) {
+    return { 'vocals-removed': 'vocal-free', bass: 'bass', instruments: 'instrument', percussion: 'percussion' }[type];
+  }
+
+  _safeFileName(duration) {
+    return `${Math.round(duration)}s`;
+  }
 
   _openExportModal() {
     this.dom.modalOverlay.classList.add('open');

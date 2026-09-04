@@ -27,7 +27,7 @@ Music-notes/
 
 ## Prerequisites
 
-- **Node.js** v16 or higher
+- **Node.js** v18 or higher
 - **npm** v8 or higher
 - A modern browser (Chrome, Edge, Firefox, Safari)
 
@@ -42,6 +42,8 @@ cd Music-notes
 # 2. Install dependencies
 npm install
 ```
+
+Create a `.env` file in the project root (next to `package.json`) from the included `.env.example`, then add your provider values. The server loads it automatically when it starts.
 
 This installs:
 - `express` — HTTP server and routing
@@ -88,6 +90,7 @@ All endpoints are prefixed with `/api`.
 | `GET`    | `/api/presets/:id`          | Get a single preset by ID                |
 | `GET`    | `/api/scales`               | Get musical scale info (10 scales)       |
 | `POST`   | `/api/upload`               | Upload an audio file (multipart form)    |
+| `POST`   | `/api/separate/:sessionId`  | Proxy a configured hosted stem separator |
 | `POST`   | `/api/analyze/:sessionId`   | Run analysis pipeline on a session       |
 | `GET`    | `/api/sessions`             | List all upload sessions                 |
 | `GET`    | `/api/sessions/:id`         | Get session details                      |
@@ -137,6 +140,7 @@ curl -X POST http://localhost:3000/api/latent/interpolate \
 4. **Morph styles** — Drag the node in the Latent Space grid to blend between styles in real-time
 5. **Fine-tune** — Adjust sliders for brightness, BPM, swing, density, scale, reverb, delay, etc.
 6. **Export** — Click "Export WAV" to render a composition (10s to 5min) and download it
+7. **Extract tracks** — After uploading, download a vocal-reduced, bass, instrument, or percussion WAV. The hosted provider is used when configured; otherwise the browser renderer is used.
 
 ---
 
@@ -198,6 +202,18 @@ server {
 | Variable | Default | Description        |
 |----------|---------|--------------------|
 | `PORT`   | `3000`  | Server listen port |
+| `AUDIOSHAKE_API_URL` | `https://api.audioshake.ai` | AudioShake API base URL. |
+| `STEM_API_KEY` | unset | AudioShake API key sent as `x-api-key`. Keep this server-side. |
+
+The hosted endpoint should return an audio file (WAV/MP3) in its response body. Configure a provider with:
+
+```bash
+AUDIOSHAKE_API_URL=https://api.audioshake.ai STEM_API_KEY=your-token npm start
+```
+
+AudioShake processing is asynchronous and may take up to two minutes. Without `STEM_API_KEY`, extraction still works locally. Vocal removal uses stereo center cancellation; bass, instruments, and percussion use frequency-isolation filters.
+
+Uploaded source files are created in `backend/uploads/` after a successful upload. The current composition and stem downloads are generated in the browser and downloaded directly, so `backend/exports/` remains empty unless a future server-side export route is added.
 
 ---
 

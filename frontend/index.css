@@ -457,6 +457,39 @@ body::after {
   display: block;
 }
 
+.stem-exports {
+  margin-top: var(--gap-md);
+  padding-top: var(--gap-md);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.stem-exports__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-sm);
+  margin-bottom: var(--gap-sm);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.stem-exports__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-sm);
+}
+
+.stem-export-btn {
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 0.7rem;
+  text-align: left;
+}
+
+.stem-export-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* ── Sliders / Controls ───────────────────────────────── */
 .control-group {
   display: flex;

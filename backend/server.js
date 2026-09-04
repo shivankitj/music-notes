@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -7,6 +9,8 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const AUDIOSHAKE_API_URL = (process.env.AUDIOSHAKE_API_URL || 'https://api.audioshake.ai').replace(/\/$/, '');
+const STEM_API_KEY = process.env.STEM_API_KEY;
 
 app.use(cors());
 app.use(express.json());
@@ -170,6 +174,78 @@ app.post('/api/upload', upload.single('audio'), (req, res) => {
   sessions.set(sessionId, { ...fileInfo, status: 'uploaded', analysis: null });
   console.log(`[UPLOAD] ${fileInfo.originalName} (${(fileInfo.size / 1024).toFixed(1)} KB) → session ${sessionId}`);
   res.json({ success: true, session: fileInfo });
+});
+
+const AUDIO_SHAKE_MODELS = {
+  'vocals-removed': 'instrumental',
+  bass: 'bass',
+  instruments: 'other',
+  percussion: 'drums',
+};
+
+const audioShakeHeaders = () => ({ 'x-api-key': STEM_API_KEY });
+
+async function createAudioShakeAsset(session) {
+  const audio = fs.readFileSync(path.join(__dirname, 'uploads', session.filename));
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: session.mimetype || 'audio/mpeg' }), session.originalName);
+  const response = await fetch(`${AUDIOSHAKE_API_URL}/assets`, {
+    method: 'POST',
+    headers: audioShakeHeaders(),
+    body: form,
+  });
+  if (!response.ok) throw new Error(`AudioShake asset upload failed (${response.status}): ${(await response.text()).slice(0, 180)}`);
+  return (await response.json()).id;
+}
+
+async function createAudioShakeTask(assetId, model) {
+  const response = await fetch(`${AUDIOSHAKE_API_URL}/tasks`, {
+    method: 'POST',
+    headers: { ...audioShakeHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetId, targets: [{ model, formats: ['wav'] }] }),
+  });
+  if (!response.ok) throw new Error(`AudioShake task creation failed (${response.status}): ${(await response.text()).slice(0, 180)}`);
+  return (await response.json()).id;
+}
+
+async function waitForAudioShakeOutput(taskId) {
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const response = await fetch(`${AUDIOSHAKE_API_URL}/tasks/${taskId}`, { headers: audioShakeHeaders() });
+    if (!response.ok) throw new Error(`AudioShake task lookup failed (${response.status})`);
+    const task = await response.json();
+    const target = task.targets?.[0];
+    if (target?.status === 'completed' && target.output?.[0]?.link) return target.output[0].link;
+    if (target?.status === 'error') throw new Error(`AudioShake ${target.model} failed: ${target.error?.message || 'unknown error'}`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  throw new Error('AudioShake task timed out after two minutes');
+}
+
+// AudioShake stem separation proxy. The API key never reaches the browser.
+app.post('/api/separate/:sessionId', async (req, res, next) => {
+  const { stem } = req.query;
+  const session = sessions.get(req.params.sessionId);
+  const model = AUDIO_SHAKE_MODELS[stem];
+
+  if (!STEM_API_KEY) {
+    return res.status(503).json({ success: false, error: 'AudioShake is not configured; using local extraction' });
+  }
+  if (!session || !model) {
+    return res.status(400).json({ success: false, error: 'A valid session and stem are required' });
+  }
+
+  try {
+    const assetId = await createAudioShakeAsset(session);
+    const taskId = await createAudioShakeTask(assetId, model);
+    const outputLink = await waitForAudioShakeOutput(taskId);
+    const response = await fetch(outputLink);
+    if (!response.ok) throw new Error(`AudioShake output download failed (${response.status})`);
+    res.set('Content-Type', response.headers.get('content-type') || 'audio/wav');
+    res.set('Content-Disposition', `attachment; filename="mimic-${stem}.wav"`);
+    res.send(Buffer.from(await response.arrayBuffer()));
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Analyze audio (simulated neural pipeline)

@@ -7,13 +7,20 @@
     "start": "node backend/server.js",
     "dev": "node backend/server.js"
   },
-  "keywords": ["music", "synthesis", "web-audio", "latent-space", "generative"],
+  "keywords": [
+    "music",
+    "synthesis",
+    "web-audio",
+    "latent-space",
+    "generative"
+  ],
   "author": "MIMIC",
   "license": "MIT",
   "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.21.0",
     "multer": "^1.4.5-lts.1",
-    "cors": "^2.8.5",
     "uuid": "^10.0.0"
   }
 }

@@ -1,4 +1,4 @@
-// sequencer.js — Generative Music Sequencer
+// sequencer.js - Generative Music Sequencer
 // Markov chain chord progressions, probabilistic melody walker,
 // configurable rhythm patterns, real-time parameter morphing.
 
@@ -82,8 +82,6 @@ const DRUM_PATTERNS = {
   },
 };
 
-────
-
 function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
@@ -105,8 +103,6 @@ function pickWeighted(transitions) {
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
-
-────
 
 export class Sequencer {
   constructor(audioEngine) {
@@ -192,7 +188,7 @@ export class Sequencer {
     return this.engine.currentTime - this.startTime;
   }
 
-──
+// ----------------------------------------------------------------
 
   _scheduleLoop() {
     const lookahead = 0.1;   // schedule 100ms ahead
@@ -222,7 +218,7 @@ export class Sequencer {
     this._phraseStep++;
   }
 
-──
+// ----------------------------------------------------------------
 
   _processStep(step, time) {
     const beatInBar = (step % 16);  // 0-15 within a bar
@@ -235,7 +231,7 @@ export class Sequencer {
     // Update engine parameters from style
     this._syncEngineParams();
 
-    // ── Chord changes (every phrase)
+    // Chord changes (every phrase)
     const stepsPerPhrase = this.style.phraseLength * 4; // in 16th notes
     if (this._phraseStep >= stepsPerPhrase) {
       this._phraseStep = 0;
@@ -252,7 +248,7 @@ export class Sequencer {
     }
     this._chordHoldSteps--;
 
-    // ── Pad (chord sustain) — trigger at chord change
+    // Pad (chord sustain) - trigger at chord change
     if (this.style.padEnabled && this._chordHoldSteps === (Math.random() < 0.4 ? stepsPerPhrase - 1 : Math.floor(stepsPerPhrase / 2) - 1)) {
       // We'll just trigger pad on phrase boundaries
     }
@@ -265,7 +261,7 @@ export class Sequencer {
       }
     }
 
-    // ── Bass — plays root of chord on beats 1 and 3, with occasional walking
+    // Bass - plays root of chord on beats 1 and 3, with occasional walking
     if (this.style.bassEnabled && beatInBar % 4 === 0) {
       const bassFreq = this._currentChordFreqs[0] / 2; // one octave down
       const dur = (60 / this.style.bpm) * 0.9;
@@ -282,12 +278,12 @@ export class Sequencer {
       this._logNote('bass', walkFreq, time, dur);
     }
 
-    // ── Lead Melody — probabilistic scale walking
+    // Lead Melody - probabilistic scale walking
     if (this.style.leadEnabled) {
       this._processLeadStep(beatInBar, time);
     }
 
-    // ── Drums
+    // Drums
     if (this.style.drumsEnabled) {
       this._processDrumStep(beatInBar, time);
     }
@@ -351,7 +347,7 @@ export class Sequencer {
     if (beatInBar % 4 === 0) return Math.random() < 0.85;
     // On "and" beats (2, 6, 10, 14) moderate
     if (beatInBar % 2 === 0) return Math.random() < this.style.density * 0.7;
-    // On offbeats — density dependent
+    // On offbeats - density dependent
     return Math.random() < this.style.density * 0.35;
   }
 
@@ -383,7 +379,7 @@ export class Sequencer {
     }
   }
 
-──
+// ----------------------------------------------------------------
 
   _advanceChord() {
     const markov = CHORD_MARKOV[this.style.chordStyle] || CHORD_MARKOV.jazz;
